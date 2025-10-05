@@ -28,7 +28,7 @@
 
   <!-- Header -->
   <header class="bg-green-600 text-white p-4 text-center font-bold text-xl animate-fade-in-up">
-    🌱 SmartFarmer – Données NASA POWER (météo agricole)
+    🌱 SmartFarmer – Intelligence Climatique au service des Agriculteurs
   </header>
 
   <main class="mt-4 space-y-6">
@@ -46,12 +46,19 @@
       <div class="bg-white rounded-lg shadow-lg w-11/12 md:w-1/2 p-6 relative animate-fade-in-up">
         <button @click="showModal=false" class="absolute top-2 right-3 text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
         <h2 class="text-lg font-semibold mb-3 text-center">Résumé Météo NASA 🌦️</h2>
+        <br>
         <p><b>Localisation :</b> {{ summary.locality }}</p>
+        <br>
         <p><b>Pluie aujourd’hui :</b> {{ summary.today_mm }} mm</p>
+        <br>
         <p><b>Moyenne 7 jours :</b> {{ summary.avg7days_mm }} mm</p>
+        <br>
         <p><b>Total mensuel estimé :</b> {{ summary.monthTotal_mm }} mm</p>
+        <br>
         <p><b>🌵 Sécheresse :</b> <span :class="riskColor(summary.droughtRisk)">{{ summary.droughtRisk }}</span></p>
+        <br>
         <p><b>💧 Risque d’inondation :</b> <span :class="riskColor(summary.floodRisk)">{{ summary.floodRisk }}</span></p>
+        <br>
 
         <h3 class="text-md font-semibold mt-4 mb-2">Conseils agricoles 🌿</h3>
         <ul class="list-disc list-inside">
