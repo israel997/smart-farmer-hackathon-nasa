@@ -1,13 +1,189 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>smartfarmer</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
-  </body>
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>🌾 SmartFarmer – Données NASA POWER</title>
+
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<!-- Vue 3 -->
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+
+<style>
+@keyframes fade-in-up {0%{opacity:0;transform:translateY(20px);}100%{opacity:1;transform:translateY(0);}}
+.animate-fade-in-up{animation:fade-in-up 0.7s ease-out forwards;}
+</style>
+</head>
+
+<body class="bg-gray-50 text-gray-800">
+<div id="app" class="p-4">
+
+  <!-- Header -->
+  <header class="bg-green-600 text-white p-4 text-center font-bold text-xl animate-fade-in-up">
+    🌱 SmartFarmer – Données NASA POWER (météo agricole)
+  </header>
+
+  <main class="mt-4 space-y-6">
+
+    <p class="text-gray-700 text-center">🗺️ Cliquez sur une région de la carte pour récupérer les données météorologiques NASA (pluie sur 7 jours).</p>
+
+    <!-- Carte -->
+    <div id="map" class="h-96 w-full rounded-lg shadow-md animate-fade-in-up"></div>
+
+    <!-- Graphique -->
+    <canvas id="rainChart" class="mt-6 max-w-3xl mx-auto"></canvas>
+
+    <!-- Modal -->
+    <div v-if="showModal" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+      <div class="bg-white rounded-lg shadow-lg w-11/12 md:w-1/2 p-6 relative animate-fade-in-up">
+        <button @click="showModal=false" class="absolute top-2 right-3 text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+        <h2 class="text-lg font-semibold mb-3 text-center">Résumé Météo NASA 🌦️</h2>
+        <p><b>Localisation :</b> {{ summary.locality }}</p>
+        <p><b>Pluie aujourd’hui :</b> {{ summary.today_mm }} mm</p>
+        <p><b>Moyenne 7 jours :</b> {{ summary.avg7days_mm }} mm</p>
+        <p><b>Total mensuel estimé :</b> {{ summary.monthTotal_mm }} mm</p>
+        <p><b>🌵 Sécheresse :</b> <span :class="riskColor(summary.droughtRisk)">{{ summary.droughtRisk }}</span></p>
+        <p><b>💧 Risque d’inondation :</b> <span :class="riskColor(summary.floodRisk)">{{ summary.floodRisk }}</span></p>
+
+        <h3 class="text-md font-semibold mt-4 mb-2">Conseils agricoles 🌿</h3>
+        <ul class="list-disc list-inside">
+          <li v-for="tip in tips">{{ tip }}</li>
+        </ul>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+const { createApp, ref, onMounted } = Vue
+
+createApp({
+  setup() {
+    const summary = ref({})
+    const tips = ref([])
+    const showModal = ref(false)
+    let map, rainChart
+
+    // --- COULEURS ---
+    const riskColor = risk =>
+      risk === "Normal" ? "text-green-600 font-bold" :
+      risk === "Risque faible" ? "text-yellow-500 font-bold" :
+      "text-red-600 font-bold"
+
+    // --- CONSEILS ---
+    const generateTips = () => {
+      tips.value = []
+      if (summary.value.droughtRisk === "Risque élevé") tips.value.push("⚠️ Forte sécheresse : irriguez régulièrement.")
+      else if (summary.value.droughtRisk === "Risque faible") tips.value.push("💧 Sécheresse modérée : surveillez l’humidité du sol.")
+      else tips.value.push("🌱 Conditions normales, irrigation standard.")
+
+      if (summary.value.floodRisk === "Risque élevé") tips.value.push("🌊 Risque d’inondation : prévoyez un bon drainage.")
+      else if (summary.value.floodRisk === "Risque faible") tips.value.push("💛 Pluies modérées : surveillez les bassins.")
+      else tips.value.push("💧 Aucune alerte particulière sur les pluies.")
+    }
+
+    // --- FETCH NASA API ---
+    async function fetchNASAData(lat, lon) {
+      try {
+        const start = "20250928"
+        const end = "20251005"
+        const url = `https://power.larc.nasa.gov/api/temporal/daily/point?parameters=PRECTOTCORR&start=${start}&end=${end}&latitude=${lat}&longitude=${lon}&community=AG&format=JSON`
+
+        const res = await fetch(url)
+        const data = await res.json()
+
+        if (!data?.properties?.parameter?.PRECTOTCORR) {
+          alert("Aucune donnée NASA disponible pour cette zone.")
+          console.error("Structure inattendue :", data)
+          return null
+        }
+
+        const daily = Object.entries(data.properties.parameter.PRECTOTCORR)
+          .map(([date, value]) => ({ date, value }))
+
+        return daily
+      } catch (err) {
+        console.error("Erreur API NASA :", err)
+        alert("Erreur de connexion à l’API NASA.")
+        return null
+      }
+    }
+
+    // --- MISE À JOUR DES GRAPHIQUES ---
+    const updateCharts = (daily) => {
+      const ctx = document.getElementById('rainChart').getContext('2d')
+      const labels = daily.map(d => d.date)
+      const values = daily.map(d => d.value)
+      if (rainChart) rainChart.destroy()
+      rainChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Pluies quotidiennes (mm)',
+            data: values,
+            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+            borderColor: 'blue',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          animation: { duration: 1000, easing: 'easeOutQuart' }
+        }
+      })
+    }
+
+    // --- AU CLIC SUR LA CARTE ---
+    const fetchData = async (lat, lon) => {
+      const nasaData = await fetchNASAData(lat, lon)
+      if (!nasaData) return
+
+      const today = nasaData[nasaData.length - 1].value
+      const avg = nasaData.reduce((sum, d) => sum + d.value, 0) / nasaData.length
+      const total = nasaData.reduce((sum, d) => sum + d.value, 0)
+
+      summary.value = {
+        locality: `Lat: ${lat.toFixed(2)}, Lon: ${lon.toFixed(2)}`,
+        today_mm: today.toFixed(1),
+        avg7days_mm: avg.toFixed(1),
+        monthTotal_mm: (total * 4).toFixed(1),
+        droughtRisk: avg < 2 ? "Risque élevé" : avg < 5 ? "Risque faible" : "Normal",
+        floodRisk: today > 20 ? "Risque élevé" : today > 10 ? "Risque faible" : "Normal"
+      }
+
+      generateTips()
+      updateCharts(nasaData)
+      showModal.value = true
+    }
+
+    // --- INITIALISATION DE LA CARTE ---
+    onMounted(() => {
+      map = L.map('map').setView([9.3, 2.3], 7)
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+      }).addTo(map)
+
+      // Clic utilisateur → coordonnées → appel NASA
+      map.on('click', (e) => {
+        const { lat, lng } = e.latlng
+        fetchData(lat, lng)
+      })
+    })
+
+    return { summary, tips, showModal, riskColor }
+  }
+}).mount('#app')
+</script>
+
+</body>
 </html>
